@@ -13,64 +13,69 @@ const PORT = 3000;
 
 const url = 'https://es.wikipedia.org/wiki/Categor%C3%ADa:M%C3%BAsicos_de_rap';
 
-app.get('/', (req, res) => {
-    axios.get(url).then((response) => {
-        if(response.status === 200) {
-            // obtener enlaces desde la página principal
-            const html = response.data; //! console.log(html);
-            const $ = cheerio.load(html);
+app.get('/', async (req, res) => {
+    try {
+        // primera solicitud a la url que nos da el enunciado
+        const response = await axios.get(url);
+        const html = response.data;
+        const $ = cheerio.load(html);
 
-            // recoger solo los que están dentro del ID: #mw-pages
-            // crear los links completos con la extensión de cada rapero
-            const links = [];
-            $('#mw-pages a').each((index, element) => {
-                const link = $(element).attr('href');
-                links.push(link);
-            }) //! console.log(links);
+        // obtener los links con id #mw-pages
+        const links = [];
+        $('#mw-pages a').each((index, element) => {
+            const link = $(element).attr('href');
+            links.push(link);
+        });
 
-            
-            //! Faltaría entrar en las páginas individuales.
-            
-            // obtener título de la página
-            const pageTitle = $('title').text(); //! console.log(pageTitle);
-
-
-            // obtener imágenes
-            const imgs = [];
-            $('img').each((index, element) => {
-                const img = $(element).attr('src');
-                imgs.push(img);
-            })
-
-
-            // obtener párrafo
-            const parrafos = [];
-            $('p').each((index, element) => {
-                const parrafo = $(element).attr('p');
-                parrafos.push(parrafo);
-            })
-
-            // poryectar la respuesta en html
-            res.send(`
-                <h1>${pageTitle}</h1>
-                <h2>Enlaces</h2>
-                <ul>
-                    ${links.map(link => `<li><a href= "${url}${link}">${link}</li>`).join('')};
-                </ul>
-                <h2>Imágenes</h2>
-                <ul>
-                    ${imgs.map(img => `<li><a href= "${url}${img}">${img}</li>`).join('')};
-                </ul>
-                <ul>
-                    ${parrafos.map(parrafo => `<li><a href= "${url}${parrafo}">${parrafo}</li>`).join('')};
-                </ul>
-            `);
-
-        } else {
-            res.status(response.status).send('Error al acceder a Wikipedia');
+        // obtener los datos de estos links
+        const data = [];
+        for (const link of links) {
+            const linkDetail = await scrapLink(link);
+            data.push(linkDetail);
         }
-    });
+
+        res.json(data);
+
+    } catch (error) {
+        console.error('Error al obtener la página:', error);
+        res.status(500).send('Error del servidor.')
+    }
+
 });
+
+async function scrapLink(link) {
+    try {
+        // solicitud para cada uno de los enlaces
+        const response = await axios.get(`https://es.wikipedia.org${link}`);
+        const html = response.data;
+        const $ = cheerio.load(html);
+
+        // obtener h1, título
+        const h1 = $('h1').text();
+
+        // obtener imágenes
+        const images = [];
+        $('img').each((index, element) => {
+            const src = $(element).attr('src');
+            images.push(src);
+        });
+
+        // obtener párrafos
+        const paragraphs = [];
+        $('p').each((index, element) => {
+            const paragraphText = $(element).text();
+            const imgSrc = $(element).find('img').attr('src');
+            paragraphs.push({ text: paragraphText, img: imgSrc });
+        });
+
+        return { h1, images, paragraphs };
+
+    } catch (error) {
+        console.log('Error al obtener datos');
+        return null;
+    }
+};
+
 
 app.listen(PORT, () => {
     console.log(`Express está escuchando en el puerto http://localhost:${PORT}`);
